@@ -32,11 +32,15 @@ from petlib.cipher import Cipher
 
 def encrypt_message(K, message):
     """ Encrypt a message under a key K """
-
+    
     plaintext = message.encode("utf8")
     
     ## YOUR CODE HERE
-
+    aes = Cipher.aes_128_gcm()  #init AES cipher with 128 bits key size
+    iv = urandom(16)  #generate random initialisation vector of length 16 bytes
+    
+    ciphertext, tag = aes.quick_gcm_enc(K, iv, plaintext)  #GCM encryption returning ciphertext and tag
+    
     return (iv, ciphertext, tag)
 
 def decrypt_message(K, iv, ciphertext, tag):
@@ -45,7 +49,12 @@ def decrypt_message(K, iv, ciphertext, tag):
         In case the decryption fails, throw an exception.
     """
     ## YOUR CODE HERE
-
+    aes = Cipher.aes_128_gcm()  
+    plain = aes.quick_gcm_dec(K, iv, ciphertext, tag) #GCM decryption returning plaintext
+    
+    if plain == ciphertext: #fails if plain is same as ciphertext
+        raise Exception("decryption failed")    
+        
     return plain.encode("utf8")
 
 #####################################################
@@ -72,15 +81,16 @@ def is_point_on_curve(a, b, p, x, y):
     Return True if point (x,y) is on curve, otherwise False.
     By convention a (None, None) point represents "infinity".
     """
+   
     assert isinstance(a, Bn)
     assert isinstance(b, Bn)
     assert isinstance(p, Bn) and p > 0
     assert (isinstance(x, Bn) and isinstance(y, Bn)) \
            or (x == None and y == None)
 
-    if x == None and y == None:
+    if x is None and y is None:
         return True
-
+    
     lhs = (y * y) % p
     rhs = (x*x*x + a*x + b) % p
     on_curve = (lhs == rhs)
@@ -101,7 +111,30 @@ def point_add(a, b, p, x0, y0, x1, y1):
     """
 
     # ADD YOUR CODE BELOW
-    xr, yr = None, None
+    if is_point_on_curve(a, b, p, x0, y0) and is_point_on_curve(a, b, p, x1, y1): #if point is one curve proceed
+        if x1 is None and y1 is None: #if point x1,y1 is infinity, return x0,y0
+            return (x0, y0)
+            
+        elif x0 is None and y0 is None:
+            return (x1, y1)
+        
+        if x0 == x1 and y0 == y1: #if points re the same, exception
+            raise Exception("EC Points must not be equal")
+        
+        elif x0 == x1 and y0 == y1.mod_mul(-1, p): #if x values are the same and y values are opposite of each other
+            return (None, None)
+        
+        xp = x0
+        yp = y0
+        xq = x1
+        yq = y1
+    
+        lam = (yq - yp) * (xq - xp).mod_inverse(p)
+        xr  = ((lam * lam) - xp - xq) % p
+        yr  = (lam * (xp - xr) - yp) % p
+    else:
+        raise Exception("Points are not on the curve")
+    
     
     return (xr, yr)
 
@@ -118,9 +151,20 @@ def point_double(a, b, p, x, y):
     """  
 
     # ADD YOUR CODE BELOW
-    xr, yr = None, None
-
-    return xr, yr
+    if is_point_on_curve(a, b, p, x, y):
+        if x is None and y is None:
+            return (None, None)
+            
+        xp = x
+        yp = y
+        
+        lam = (3 * xp.pow(2) + a) * (2 * yp).mod_inverse(p)
+        xr  = (lam.pow(2) - 2 * xp) % p
+        yr  = (lam * (xp - xr) - yp) % p
+    
+        return xr, yr
+    else:
+        raise Exception("Points are not on the curve")
 
 def point_scalar_multiplication_double_and_add(a, b, p, x, y, scalar):
     """
@@ -138,9 +182,11 @@ def point_scalar_multiplication_double_and_add(a, b, p, x, y, scalar):
     """
     Q = (None, None)
     P = (x, y)
-
+   
     for i in range(scalar.num_bits()):
-        pass ## ADD YOUR CODE HERE
+        if scalar.is_bit_set(i): #if bit == 1
+            Q = point_add(a, b, p, Q[0], Q[1], P[0], P[1])
+        P = point_double(a, b, p, P[0], P[1])
 
     return Q
 
@@ -166,7 +212,12 @@ def point_scalar_multiplication_montgomerry_ladder(a, b, p, x, y, scalar):
     R1 = (x, y)
 
     for i in reversed(range(0,scalar.num_bits())):
-        pass ## ADD YOUR CODE HERE
+        if not scalar.is_bit_set(i): #if bit == 0
+            R1 = point_add(a, b, p, R0[0], R0[1], R1[0], R1[1])
+            R0 = point_double(a, b, p, R0[0], R0[1])
+        else:
+            R0 = point_add(a, b, p, R0[0], R0[1], R1[0], R1[1])
+            R1 = point_double(a, b, p, R1[0], R1[1])
 
     return R0
 
@@ -197,6 +248,8 @@ def ecdsa_sign(G, priv_sign, message):
     plaintext =  message.encode("utf8")
 
     ## YOUR CODE HERE
+    digest = sha256(plaintext).digest() #has plaintext using sha256 hashfunction
+    sig = do_ecdsa_sign(G, priv_sign, digest) #sign using function using private key
 
     return sig
 
@@ -205,7 +258,9 @@ def ecdsa_verify(G, pub_verify, message, sig):
     plaintext =  message.encode("utf8")
 
     ## YOUR CODE HERE
-
+    digest = sha256(plaintext).digest() #hash
+    res = do_ecdsa_verify(G, pub_verify, sig, digest) #returns true if decryption signature using public key == digest
+    
     return res
 
 #####################################################
@@ -234,15 +289,31 @@ def dh_encrypt(pub, message, aliceSig = None):
     """
     
     ## YOUR CODE HERE
-    pass
+    if aliceSig is None: #catch None case
+        G, aliceSig, fresh_pub = dh_get_key()  #generate fresh DH key pair
+        
+    shared_key = aliceSig * pub  #derive shared key with Alices private key and Bobs public key
+    shared_key_string = str(shared_key) #convert to string
+    shared_key_trunc = shared_key_string[0:16] #only take first 16 bytes of key since shared key is the same
+    
+    iv, ciphertext, tag = encrypt_message(shared_key_trunc, message)  #AES GCM encrypt using shared key
+    
+    return iv, ciphertext, tag, fresh_pub
+    
 
-def dh_decrypt(priv, ciphertext, aliceVer = None):
+def dh_decrypt(priv, iv, ciphertext, tag, aliceVer):
     """ Decrypt a received message encrypted using your public key, 
     of which the private key is provided. Optionally verify 
     the message came from Alice using her verification key."""
     
     ## YOUR CODE HERE
-    pass
+    shared_key = priv * aliceVer  #derive shared key using Bobs private key and Alices public key
+    shared_key_string = str(shared_key)
+    shared_key_trunc = shared_key_string[0:16]
+    
+    plaintext = decrypt_message(shared_key_trunc, iv, ciphertext, tag)
+    
+    return plaintext
 
 ## NOTE: populate those (or more) tests
 #  ensure they run using the "py.test filename" command.
@@ -250,13 +321,54 @@ def dh_decrypt(priv, ciphertext, aliceVer = None):
 #  $ py.test-2.7 --cov-report html --cov Lab01Code Lab01Code.py 
 
 def test_encrypt():
-    assert False
+    G, priv, pub = dh_get_key()  #Bobs key pair
+    message = u"Hello World!"
+    iv, ciphertext, tag, fresh_pub = dh_encrypt(pub, message)
+    
+    assert len(iv) == 16
+    assert len(ciphertext) == len(message)
+    assert len(tag) == 16
+
+    assert fresh_pub != pub
 
 def test_decrypt():
-    assert False
+    G, priv, pub = dh_get_key()
+    message = u"Hello World!"
+    iv, ciphertext, tag, fresh_pub = dh_encrypt(pub, message)
+    
+    assert fresh_pub != pub #alices public key
+    
+    plain = dh_decrypt(priv, iv, ciphertext, tag, fresh_pub)
+    assert plain == message
 
 def test_fails():
-    assert False
+    from pytest import raises
+    
+    G, priv, pub = dh_get_key()
+    message = u"Hello World!"
+    iv, ciphertext, tag, fresh_pub = dh_encrypt(pub, message)
+
+    with raises(Exception) as excinfo:
+        dh_decrypt(priv, iv, urandom(len(ciphertext)), tag, fresh_pub)
+    assert 'decryption failed' in str(excinfo.value)
+
+    with raises(Exception) as excinfo:
+        dh_decrypt(priv, iv, ciphertext, urandom(len(tag)), fresh_pub)
+    assert 'decryption failed' in str(excinfo.value)
+
+    with raises(Exception) as excinfo:
+        dh_decrypt(priv, urandom(len(iv)), ciphertext, tag, fresh_pub)
+    assert 'decryption failed' in str(excinfo.value)
+
+    G, fail_priv, fail_pub = dh_get_key()
+    
+    with raises(Exception) as excinfo:
+        dh_decrypt(priv, iv, ciphertext, tag, fail_pub)
+    assert 'decryption failed' in str(excinfo.value)
+    
+    with raises(Exception) as excinfo:
+        dh_decrypt(fail_priv, iv, ciphertext, tag, fresh_pub)
+    assert 'decryption failed' in str(excinfo.value)
 
 #####################################################
 # TASK 6 -- Time EC scalar multiplication

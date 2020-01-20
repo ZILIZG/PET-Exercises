@@ -123,7 +123,7 @@ def test_on_curve():
     a, b, p = d["a"], d["b"], d["p"]
     g = G.generator()
     gx, gy = g.get_affine()
-
+   
     from Lab01Code import is_point_on_curve
     assert is_point_on_curve(a, b, p, gx, gy)
 
