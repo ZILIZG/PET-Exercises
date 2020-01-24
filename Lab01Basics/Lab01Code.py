@@ -297,21 +297,29 @@ def dh_encrypt(pub, message, aliceSig = None):
     shared_key_trunc = shared_key_string[0:16] #only take first 16 bytes of key since shared key is the same
     
     iv, ciphertext, tag = encrypt_message(shared_key_trunc, message)  #AES GCM encrypt using shared key
+    cipherpack = (fresh_pub, iv, ciphertext, tag) #return as tuple 
     
-    return iv, ciphertext, tag, fresh_pub
+    return cipherpack
     
 
-def dh_decrypt(priv, iv, ciphertext, tag, aliceVer):
+def dh_decrypt(priv, ciphertext, aliceVer = None):
     """ Decrypt a received message encrypted using your public key, 
     of which the private key is provided. Optionally verify 
     the message came from Alice using her verification key."""
     
     ## YOUR CODE HERE
+    if aliceVer is None: 
+        aliceVer = ciphertext[0]
+        
+    iv = ciphertext[1]
+    cipher = ciphertext[2]
+    tag = ciphertext[3]
+   
     shared_key = priv * aliceVer  #derive shared key using Bobs private key and Alices public key
     shared_key_string = str(shared_key)
     shared_key_trunc = shared_key_string[0:16]
     
-    plaintext = decrypt_message(shared_key_trunc, iv, ciphertext, tag)
+    plaintext = decrypt_message(shared_key_trunc, iv, cipher, tag)
     
     return plaintext
 
@@ -323,7 +331,13 @@ def dh_decrypt(priv, iv, ciphertext, tag, aliceVer):
 def test_encrypt():
     G, priv, pub = dh_get_key()  #Bobs key pair
     message = u"Hello World!"
-    iv, ciphertext, tag, fresh_pub = dh_encrypt(pub, message)
+    cipherpack = dh_encrypt(pub, message)
+    
+    fresh_pub = cipherpack[0]
+    iv = cipherpack[1]
+    ciphertext = cipherpack[2]
+    tag = cipherpack[3]
+    
     
     assert len(iv) == 16
     assert len(ciphertext) == len(message)
@@ -334,11 +348,12 @@ def test_encrypt():
 def test_decrypt():
     G, priv, pub = dh_get_key()
     message = u"Hello World!"
-    iv, ciphertext, tag, fresh_pub = dh_encrypt(pub, message)
+    cipherpack = dh_encrypt(pub, message)
     
+    fresh_pub = cipherpack[0]
     assert fresh_pub != pub #alices public key
     
-    plain = dh_decrypt(priv, iv, ciphertext, tag, fresh_pub)
+    plain = dh_decrypt(priv, cipherpack)
     assert plain == message
 
 def test_fails():
@@ -346,28 +361,37 @@ def test_fails():
     
     G, priv, pub = dh_get_key()
     message = u"Hello World!"
-    iv, ciphertext, tag, fresh_pub = dh_encrypt(pub, message)
-
+    cipherpack = dh_encrypt(pub, message)
+    
+    #random ciphertext
+    cipherpack_1 = (cipherpack[0], cipherpack[1], urandom(len(cipherpack[2])), cipherpack[3])
     with raises(Exception) as excinfo:
-        dh_decrypt(priv, iv, urandom(len(ciphertext)), tag, fresh_pub)
+        dh_decrypt(priv, cipherpack_1)
     assert 'decryption failed' in str(excinfo.value)
-
+    
+    #random tag
+    cipherpack_2 = (cipherpack[0], cipherpack[1], cipherpack[2], urandom(len(cipherpack[3])))
     with raises(Exception) as excinfo:
-        dh_decrypt(priv, iv, ciphertext, urandom(len(tag)), fresh_pub)
+        dh_decrypt(priv, cipherpack_2)
     assert 'decryption failed' in str(excinfo.value)
-
+    
+    #random iv
+    cipherpack_3 = (cipherpack[0], urandom(len(cipherpack[1])), cipherpack[2], cipherpack[3])
     with raises(Exception) as excinfo:
-        dh_decrypt(priv, urandom(len(iv)), ciphertext, tag, fresh_pub)
+        dh_decrypt(priv, cipherpack_3)
     assert 'decryption failed' in str(excinfo.value)
 
     G, fail_priv, fail_pub = dh_get_key()
     
+    #different public key for bob
+    cipherpack_4 = (fail_pub, cipherpack[1], cipherpack[2], cipherpack[3])
     with raises(Exception) as excinfo:
-        dh_decrypt(priv, iv, ciphertext, tag, fail_pub)
+        dh_decrypt(priv, cipherpack_4)
     assert 'decryption failed' in str(excinfo.value)
     
+    #different private key for bob
     with raises(Exception) as excinfo:
-        dh_decrypt(fail_priv, iv, ciphertext, tag, fresh_pub)
+        dh_decrypt(fail_priv, cipherpack)
     assert 'decryption failed' in str(excinfo.value)
 
 #####################################################
