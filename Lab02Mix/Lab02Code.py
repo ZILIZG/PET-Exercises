@@ -110,6 +110,7 @@ def mix_server_one_hop(private_key, message_list):
     return sorted(out_queue)
         
         
+        
 def mix_client_one_hop(public_key, address, message):
     """
     Encode a message to travel through a single mix with a set public key. 
@@ -133,7 +134,26 @@ def mix_client_one_hop(public_key, address, message):
     client_public_key  = private_key * G.generator()
 
     ## ADD CODE HERE
+    ## First get a shared key
+    shared_element = private_key * public_key
+    key_material = sha512(shared_element.export()).digest()
+    
+    # Use different parts of the shared key for different operations
+    hmac_key = key_material[:16]
+    address_key = key_material[16:32]
+    message_key = key_material[32:48]
+    
+    iv = b"\x00"*16
 
+    address_cipher = aes_ctr_enc_dec(address_key, iv, address_plaintext)
+    message_cipher = aes_ctr_enc_dec(message_key, iv, message_plaintext)
+    
+    h = Hmac(b"sha512", hmac_key)        
+    h.update(address_cipher)
+    h.update(message_cipher)
+    mac = h.digest()
+    expected_mac = mac[:20]
+   
     return OneHopMixMessage(client_public_key, expected_mac, address_cipher, message_cipher)
 
     
@@ -200,9 +220,8 @@ def mix_server_n_hop(private_key, message_list, final=False):
 
         h.update(msg.address)
         h.update(msg.message)
-
         expected_mac = h.digest()
-
+       
         if not secure_compare(msg.hmacs[0], expected_mac[:20]):
             raise Exception("HMAC check failure")
 
@@ -262,7 +281,46 @@ def mix_client_n_hop(public_keys, address, message):
     client_public_key  = private_key * G.generator()
 
     ## ADD CODE HERE
+    list_of_km = []
+    for pub in public_keys:
+        shared_element = private_key * pub
+        key_material = sha512(shared_element.export()).digest()
+        list_of_km = [key_material] + list_of_km
+        blinding_fac = Bn.from_binary(key_material[48:])
+        private_key = private_key * blinding_fac
+    
+    hmacs = []
+    address_cipher = None
+    message_cipher = None
+    for i in range(len(public_keys)): 
+        key_material = list_of_km[i]
+       
+        hmac_key = key_material[:16]
+        address_key = key_material[16:32]
+        message_key = key_material[32:48]
 
+        iv = b"\x00"*16
+        if i == 0:
+            address_cipher = aes_ctr_enc_dec(address_key, iv, address_plaintext)
+            message_cipher = aes_ctr_enc_dec(message_key, iv, message_plaintext)
+        else:
+            address_cipher = aes_ctr_enc_dec(address_key, iv, address_cipher)
+            message_cipher = aes_ctr_enc_dec(message_key, iv, message_cipher)
+      
+        h = Hmac(b"sha512", hmac_key)
+        
+        for j, other_mac in enumerate(hmacs):
+            iv = pack("H14s", j, b"\x00"*14)
+            hmac_cipher = aes_ctr_enc_dec(hmac_key, iv, other_mac)
+            hmacs[j] = hmac_cipher
+            h.update(hmacs[j])
+       
+        h.update(address_cipher)
+        h.update(message_cipher)
+        mac = h.digest()
+        expected_mac = mac[:20]
+        hmacs = [expected_mac] + hmacs
+        
     return NHopMixMessage(client_public_key, hmacs, address_cipher, message_cipher)
 
 
@@ -326,4 +384,5 @@ def analyze_trace(trace, target_number_of_friends, target=0):
 #                        the correctness of the result returned dependent on this background distribution?
 
 """ TODO: Your answer HERE """
+
 
