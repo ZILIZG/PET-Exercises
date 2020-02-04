@@ -338,13 +338,14 @@ def generate_trace(number_of_users, threshold_size, number_of_rounds, targets_fr
     target = 0
     others = range(1, number_of_users)
     all_users = range(number_of_users)
+    
 
     trace = []
     ## Generate traces in which Alice (user 0) is not sending
     for _ in range(number_of_rounds // 2):
         senders = sorted(random.sample( others, threshold_size))
         receivers = sorted(random.sample( all_users, threshold_size))
-
+        #print([(senders, receivers)])
         trace += [(senders, receivers)]
 
     ## Generate traces in which Alice (user 0) is sending
@@ -357,6 +358,7 @@ def generate_trace(number_of_users, threshold_size, number_of_rounds, targets_fr
         trace += [(senders, receivers)]
 
     random.shuffle(trace)
+    
     return trace
 
 
@@ -370,19 +372,31 @@ def analyze_trace(trace, target_number_of_friends, target=0):
     """
 
     ## ADD CODE HERE
+    c = Counter()
+    for i in trace:
+        count_of_alice = i[0].count(target)
+        if count_of_alice > 0:
+            for j in i[1]:
+                c[j] += 1
+                
+    l = dict(c.most_common(target_number_of_friends))
+    list_of_friends = l.keys()
+        
+    return list_of_friends
 
-    return []
 
 ## TASK Q1 (Question 1): The mix packet format you worked on uses AES-CTR with an IV set to all zeros. 
 #                        Explain whether this is a security concern and justify your answer.
 
-""" TODO: Your answer HERE """
+""" TODO: No because everytime i encrypt a packet, a different key is used with the IV. A different keystream block is generated everytime since the key changes with every encryption, therefore
+        having a same IV does not influence the resukting keystream block."""
 
 
 ## TASK Q2 (Question 2): What assumptions does your implementation of the Statistical Disclosure Attack 
-#                        makes about the distribution of traffic from non-target senders to receivers? Is
+#                        make about the distribution of traffic from non-target senders to receivers? Is
 #                        the correctness of the result returned dependent on this background distribution?
 
-""" TODO: Your answer HERE """
+""" TODO: No, my implementation ignores the distribution of a non-target sender to receivers. I only want to know the receivers targeted by Alice, therefore I am using the if statement in line 378
+        to check whether Alice is included as a sender."""
 
 
