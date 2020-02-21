@@ -32,6 +32,10 @@ def keyGen(params):
    (G, g, h, o) = params
    
    # ADD CODE HERE
+   x = o.random()
+   pub = x * g
+   
+   priv = x
 
    return (priv, pub)
 
@@ -40,7 +44,10 @@ def encrypt(params, pub, m):
     if not -100 < m < 100:
         raise Exception("Message value to low or high.")
 
-   # ADD CODE HERE
+    # ADD CODE HERE
+    (G, g, h, o) = params
+    k = o.random()
+    c = (k * g, k * pub + m * h)
 
     return c
 
@@ -75,7 +82,8 @@ def decrypt(params, priv, ciphertext):
     assert isCiphertext(params, ciphertext)
     a , b = ciphertext
 
-   # ADD CODE HERE
+    # ADD CODE HERE
+    hm = b - (priv * a)
 
     return logh(params, hm)
 
@@ -91,8 +99,9 @@ def add(params, pub, c1, c2):
     assert isCiphertext(params, c1)
     assert isCiphertext(params, c2)
 
-   # ADD CODE HERE
-
+    # ADD CODE HERE
+    c3 = (c1[0] + c2[0], c1[1] + c2[1])    
+    
     return c3
 
 def mul(params, pub, c1, alpha):
@@ -100,8 +109,9 @@ def mul(params, pub, c1, alpha):
         product of the plaintext time alpha """
     assert isCiphertext(params, c1)
 
-   # ADD CODE HERE
-
+    # ADD CODE HERE
+    c3 = (alpha * c1[0], alpha * c1[1])
+    
     return c3
 
 #####################################################
@@ -112,8 +122,11 @@ def mul(params, pub, c1, alpha):
 def groupKey(params, pubKeys=[]):
     """ Generate a group public key from a list of public keys """
     (G, g, h, o) = params
-
-   # ADD CODE HERE
+ 
+    # ADD CODE HERE
+    pub = G.infinite() #initialise pub to point at infinity, because pub + i = pub, meaning it has no effect on the group key
+    for i in pubKeys:
+        pub += i
 
     return pub
 
@@ -123,6 +136,8 @@ def partialDecrypt(params, priv, ciphertext, final=False):
     assert isCiphertext(params, ciphertext)
     
     # ADD CODE HERE
+    a1, b1 = ciphertext
+    b1 = b1 - (priv * a1)
 
     if final:
         return logh(params, b1)
@@ -143,6 +158,12 @@ def corruptPubKey(params, priv, OtherPubKeys=[]):
     (G, g, h, o) = params
     
    # ADD CODE HERE
+    #taken from lecture 4, attack on threshold decryption
+    pub = priv * g #first generate public key half
+    
+    #subtract all other public keys from own public key
+    for i in OtherPubKeys:
+        pub -= i
 
     return pub
 
@@ -158,7 +179,13 @@ def encode_vote(params, pub, vote):
     assert vote in [0, 1]
 
    # ADD CODE HERE
-
+    if vote == 0:
+        v0 = encrypt(params, pub, 1)
+        v1 = encrypt(params, pub, 0)
+    else:
+        v0 = encrypt(params, pub, 0)
+        v1 = encrypt(params, pub, 1)
+    
     return (v0, v1)
 
 def process_votes(params, pub, encrypted_votes):
@@ -167,7 +194,12 @@ def process_votes(params, pub, encrypted_votes):
     assert isinstance(encrypted_votes, list)
     
    # ADD CODE HERE
-
+    tv0 = encrypt(params, pub, 0) #initialise empty ciphertexts
+    tv1 = encrypt(params, pub, 0)
+    
+    for i in encrypted_votes:
+        tv0 = add(params, pub, tv0, i[0]) #add vote for 0 to tally
+        tv1 = add(params, pub, tv1, i[1])
     return tv0, tv1
 
 def simulate_poll(votes):
